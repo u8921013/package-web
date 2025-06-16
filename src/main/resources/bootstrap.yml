@@ -1,0 +1,11 @@
+spring:
+  application:
+    name: packaging-service
+  cloud:
+    nacos:
+      config:
+        server-addr: ${NACOS_SERVER:localhost:8848}
+        file-extension: yaml
+        shared-configs:
+          - dataId: packaging-service.yaml
+            refresh: true
