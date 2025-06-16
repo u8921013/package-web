@@ -1,11 +1,15 @@
 package net.ubn.td.package_web.service;
 
 import java.util.Map;
+
+import org.springframework.boot.web.client.RestTemplateBuilder;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.BodyInserters;
-import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Mono;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.RestTemplate;
 
 import net.ubn.td.package_web.config.PackagerProperties;
 
@@ -15,38 +19,37 @@ import net.ubn.td.package_web.config.PackagerProperties;
 @Service
 public class RemoteApiService {
 
-    private final WebClient webClient;
+    private final RestTemplate restTemplate;
     private final PackagerProperties properties;
 
-    public RemoteApiService(WebClient.Builder builder, PackagerProperties properties) {
-        this.webClient = builder.build();
+    public RemoteApiService(RestTemplateBuilder builder, PackagerProperties properties) {
+        this.restTemplate = builder.build();
         this.properties = properties;
     }
 
     private String obtainAccessToken() {
-        return webClient.post()
-                .uri(properties.getTokenUrl())
-                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                .body(BodyInserters.fromFormData("grant_type", "client_credentials"))
-                .headers(h -> h.setBasicAuth(properties.getClientId(), properties.getClientSecret()))
-                .retrieve()
-                .bodyToMono(Map.class)
-                .map(m -> (String) m.get("access_token"))
-                .block();
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+        headers.setBasicAuth(properties.getClientId(), properties.getClientSecret());
+
+        MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
+        body.add("grant_type", "client_credentials");
+
+        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(body, headers);
+        Map<?, ?> response = restTemplate.postForObject(properties.getTokenUrl(), request, Map.class);
+        return response != null ? (String) response.get("access_token") : null;
     }
 
     public void sendMetadata(Map<String, Object> metadata) {
         String token = obtainAccessToken();
-        webClient.post()
-                .uri(properties.getRemoteApiUrl())
-                .bodyValue(metadata)
-                .header("Authorization", "Bearer " + token)
-                .retrieve()
-                .bodyToMono(Void.class)
-                .onErrorResume(ex -> {
-                    // TODO handle errors
-                    return Mono.empty();
-                })
-                .block();
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(token);
+        HttpEntity<Map<String, Object>> request = new HttpEntity<>(metadata, headers);
+        try {
+            restTemplate.postForObject(properties.getRemoteApiUrl(), request, Void.class);
+        } catch (Exception ex) {
+            // TODO handle errors
+        }
     }
 }
